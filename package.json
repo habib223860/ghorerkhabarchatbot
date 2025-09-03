@@ -1,0 +1,23 @@
+{
+  "name": "messenger-bot-backend",
+  "version": "1.0.0",
+  "description": "Facebook Messenger bot backend for 'Ghorer Khabar'",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "dev": "ts-node-esm src/index.ts"
+  },
+  "dependencies": {
+    "@google/genai": "^1.16.0",
+    "body-parser": "^1.20.2",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.12.12",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

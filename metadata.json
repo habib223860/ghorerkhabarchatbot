@@ -1,0 +1,5 @@
+{
+  "name": "ঘরের খাবার চ্যাট বট",
+  "description": "A Facebook Messenger-style chatbot simulator for 'ঘরের খাবার', a homemade frozen food business, powered by Gemini. The bot acts as a friendly assistant to answer customer questions in Bengali.",
+  "requestFramePermissions": []
+}
