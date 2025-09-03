@@ -1,11 +1,9 @@
-// FIX: Add a triple-slash directive to load Node.js types. This resolves errors for Node.js-specific APIs (`process.exit`) and ensures libraries like Express are correctly typed.
 /// <reference types="node" />
 import express from 'express';
 import bodyParser from 'body-parser';
 import { GoogleGenAI, Chat } from "@google/genai";
 
 // ---- Configuration ----
-// These must be set in your hosting environment (e.g., Render)
 const FB_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN;
 const FB_PAGE_ACCESS_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN;
 const API_KEY = process.env.API_KEY;
@@ -31,7 +29,6 @@ const systemInstruction = `
 ডেলিভারি চার্জ ঢাকার ভিতরে ৬০ টাকা, এবং ঢাকার বাইরে ১২০ টাকা। অর্ডার করার জন্য গ্রাহকের নাম, ঠিকানা, এবং ফোন নম্বর প্রয়োজন হবে।
 `;
 
-// In-memory store for chat sessions. Key: user's Page-Scoped ID (PSID)
 const chatSessions = new Map<string, Chat>();
 
 function getOrCreateChat(sessionId: string): Chat {
@@ -50,7 +47,6 @@ function getOrCreateChat(sessionId: string): Chat {
     return newChat;
 }
 
-// ---- Express Server Setup ----
 const app = express();
 app.use(bodyParser.json());
 
@@ -60,9 +56,6 @@ app.listen(PORT, () => {
     console.log(`Server is listening on port ${PORT}`);
 });
 
-// ---- Webhook Endpoints ----
-
-// 1. Webhook verification endpoint
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -78,7 +71,6 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// 2. Handle incoming messages from Messenger
 app.post('/webhook', (req, res) => {
     const body = req.body;
 
@@ -97,13 +89,11 @@ app.post('/webhook', (req, res) => {
     }
 });
 
-// ---- Helper Functions ----
-
 async function handleMessage(senderPsid: string, receivedMessage: string) {
     try {
         const chat = getOrCreateChat(senderPsid);
         const response = await chat.sendMessage({ message: receivedMessage });
-        const geminiText = response.text;
+        const geminiText = response.text || "দুঃখিত, আমি ঠিক বুঝতে পারিনি।";
         
         await callSendAPI(senderPsid, geminiText);
     } catch (error) {
