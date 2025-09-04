@@ -1,7 +1,7 @@
 {
-  "name": "messenger-bot-backend",
+  "name": "messenger-bot-rag-backend",
   "version": "1.0.0",
-  "description": "Facebook Messenger bot backend for 'Ghorer Khabar'",
+  "description": "RAG-based Facebook Messenger bot backend for 'Ghorer Khabar'",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@google/genai": "^1.16.0",
-    "body-parser": "^1.20.2",
     "express": "^4.19.2"
   },
   "devDependencies": {
