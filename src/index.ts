@@ -1,16 +1,16 @@
 /// <reference types="node" />
 import express from 'express';
-import bodyParser from 'body-parser';
 import { GoogleGenAI, Chat } from "@google/genai";
 
 // ---- Configuration ----
+// These must be set in your hosting environment (e.g., Render)
 const FB_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN;
 const FB_PAGE_ACCESS_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN;
 const API_KEY = process.env.API_KEY;
 
 if (!FB_VERIFY_TOKEN || !FB_PAGE_ACCESS_TOKEN || !API_KEY) {
     console.error("Missing required environment variables. Please ensure FB_VERIFY_TOKEN, FB_PAGE_ACCESS_TOKEN, and API_KEY are set.");
-    process.exit(1);
+    throw new Error("Missing required environment variables. Halting server startup.");
 }
 
 const ai = new GoogleGenAI({ apiKey: API_KEY });
@@ -52,9 +52,9 @@ const systemInstruction = `
 ২৫) বুটের হালুয়া ৭০০ টাকা কেজি 
 (বি: দ্রঃ কমপক্ষে যে কোন ২ প্যাক অর্ডার করতে হবে)
 
-ডেলিভারি চার্জ ঢাকার ভিতরে ৬০ টাকা, এবং ঢাকা সিটির বাইরে কোন ডেলিভারি হয় না । অর্ডার করার জন্য গ্রাহকের নাম, ঠিকানা, এবং ফোন নম্বর প্রয়োজন হবে।
+ডেলিভারি চার্জ ঢাকার ভিতরে ৬০ টাকা, এবং ঢাকা সিটির বাইরে কোন ডেলিভারি হয় না । অর্ডার কনফার্ম হওয়ার সম্ভাব্য ১-৩ দিনের মধ্যে ডেলিভারি সম্পন্ন হবে। অর্ডার করার জন্য গ্রাহকের নাম, ঠিকানা, এবং ফোন নম্বর প্রয়োজন হবে।
 `;
-
+// In-memory store for chat sessions. Key: user's Page-Scoped ID (PSID)
 const chatSessions = new Map<string, Chat>();
 
 function getOrCreateChat(sessionId: string): Chat {
@@ -73,14 +73,18 @@ function getOrCreateChat(sessionId: string): Chat {
     return newChat;
 }
 
+// ---- Express Server Setup ----
 const app = express();
-app.use(bodyParser.json());
+// FIX: Using express.json() without a path is more idiomatic for global middleware and helps resolve TypeScript overload errors.
+app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
     console.log(`Server is listening on port ${PORT}`);
 });
+
+// ---- Webhook Endpoints ----
 
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
@@ -115,16 +119,45 @@ app.post('/webhook', (req, res) => {
     }
 });
 
+// ---- Helper Functions ----
+
 async function handleMessage(senderPsid: string, receivedMessage: string) {
     try {
         const chat = getOrCreateChat(senderPsid);
         const response = await chat.sendMessage({ message: receivedMessage });
-        const geminiText = response.text || "দুঃখিত, আমি ঠিক বুঝতে পারিনি।";
+        let geminiText = response.text || "দুঃখিত, আমি ঠিক বুঝতে পারিনি।";
+
+        // Check for the order confirmation marker
+        const orderConfirmedMarker = '[ORDER_CONFIRMED]';
+        if (geminiText.includes(orderConfirmedMarker)) {
+            console.log(`Order confirmed for user ${senderPsid}. Attempting to add label.`);
+            
+            // Clean the marker from the text before sending to the user
+            geminiText = geminiText.replace(orderConfirmedMarker, '').trim();
+
+            const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format
+            const labelName = `Order: ${today}`;
+
+            try {
+                const labelId = await createOrGetLabelId(labelName);
+                if (labelId) {
+                    await associateLabelWithUser(senderPsid, labelId);
+                    console.log(`Successfully labeled user ${senderPsid} with label "${labelName}" (ID: ${labelId})`);
+                }
+            } catch (labelError) {
+                console.error(`Failed to process label for user ${senderPsid}:`, labelError);
+                // We still send the message even if labeling fails.
+            }
+        }
         
         await callSendAPI(senderPsid, geminiText);
-    } catch (error) {
-        console.error('Error handling message:', error);
-        await callSendAPI(senderPsid, "দুঃখিত, একটি সমস্যা হয়েছে। আমরা বিষয়টি দেখছি।");
+    } catch (error: any) {
+        if (error.constructor?.name === 'ApiError') {
+             console.error('Gemini API Error:', error.message);
+        } else {
+            console.error('Unknown error in handleMessage:', error);
+        }
+        await callSendAPI(senderPsid, "দুঃখিত, একটি প্রযুক্তিগত সমস্যা হয়েছে। আমরা এটি দ্রুত সমাধান করার চেষ্টা করছি।");
     }
 }
 
@@ -151,5 +184,72 @@ async function callSendAPI(senderPsid: string, responseText: string) {
         }
     } catch (error) {
         console.error("Unable to send message via fetch:", error);
+    }
+}
+
+// ---- New Functions for Labeling ----
+
+/**
+ * Creates a new label or finds an existing one with the same name.
+ * Requires 'pages_manage_metadata' permission.
+ * @param {string} labelName The name of the label to create or find.
+ * @returns {Promise<string|null>} The ID of the label, or null if an error occurs.
+ */
+async function createOrGetLabelId(labelName: string): Promise<string | null> {
+    const getLabelsUrl = `https://graph.facebook.com/v19.0/me/custom_labels?fields=name&access_token=${FB_PAGE_ACCESS_TOKEN}`;
+    
+    try {
+        // 1. Check for existing label
+        const getResponse = await fetch(getLabelsUrl);
+        const getResponseData = await getResponse.json();
+        if (!getResponse.ok) {
+            console.error("Error fetching labels:", getResponseData);
+            return null;
+        }
+
+        const existingLabel = getResponseData.data?.find((label: any) => label.name === labelName);
+        if (existingLabel) {
+            console.log(`Found existing label "${labelName}" with ID: ${existingLabel.id}`);
+            return existingLabel.id;
+        }
+
+        // 2. Create new label if not found
+        console.log(`Label "${labelName}" not found. Creating new one.`);
+        const createLabelUrl = `https://graph.facebook.com/v19.0/me/custom_labels?name=${encodeURIComponent(labelName)}&access_token=${FB_PAGE_ACCESS_TOKEN}`;
+        const createResponse = await fetch(createLabelUrl, { method: 'POST' });
+        const createResponseData = await createResponse.json();
+
+        if (!createResponse.ok) {
+            console.error("Error creating label:", createResponseData);
+            return null;
+        }
+
+        console.log(`Created new label "${labelName}" with ID: ${createResponseData.id}`);
+        return createResponseData.id;
+
+    } catch (error) {
+        console.error("Exception in createOrGetLabelId:", error);
+        return null;
+    }
+}
+
+/**
+ * Associates a label with a user.
+ * Requires 'pages_manage_metadata' permission.
+ * @param {string} psid The user's Page-Scoped ID.
+ * @param {string} labelId The ID of the label to associate.
+ */
+async function associateLabelWithUser(psid: string, labelId: string): Promise<void> {
+    const associateUrl = `https://graph.facebook.com/v19.0/${labelId}/label?user=${psid}&access_token=${FB_PAGE_ACCESS_TOKEN}`;
+    
+    try {
+        const response = await fetch(associateUrl, { method: 'POST' });
+        const responseData = await response.json();
+
+        if (!response.ok || !responseData.success) {
+            console.error(`Error associating label ID ${labelId} with user ${psid}:`, responseData);
+        }
+    } catch (error) {
+        console.error(`Exception in associateLabelWithUser for user ${psid}:`, error);
     }
 }
