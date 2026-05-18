@@ -1,7 +1,6 @@
 import express, { Request, Response } from 'express';
-import { handleMessengerWebhook, verifyWebhook } from './webhookHandler.js';
-import { initializeRAG } from '../services/ragService.js';
-
+import { initializeRAG } from '../services/ragService.js'; // এটা ঠিকই আছে
+import { handleMessengerWebhook, verifyWebhook } from './webhookHandler.js'; // এটাও ঠিক
 const app = express();
 const PORT = process.env.PORT || 3000;
 
