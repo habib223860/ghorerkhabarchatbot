@@ -1,27 +1,21 @@
-import { GoogleGenAI } from '@google/genai';
+import Groq from 'groq-sdk';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+// ✅ Gemini এর বদলে Groq
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
 
-// ✅ FIX: Proper state management for RAG service
 let knowledgeChunks: string[] = [];
 let isInitialized = false;
 
-/**
- * ✅ FIX: Initialize RAG by loading knowledge base from file
- * Prevents "RAG service not initialized" error
- */
 export async function initializeRAG(): Promise<void> {
   const knowledgeFile = path.join(__dirname, '../data/knowledge.txt');
 
-  // Check if knowledge file exists
   if (!fs.existsSync(knowledgeFile)) {
     console.warn('⚠️  knowledge.txt not found. Creating sample file...');
-    // Create sample knowledge base for "Ghorer Khabar" food delivery
     const sampleKnowledge = `
 ঘরের খাবার একটি হোম ফুড ডেলিভারি সার্ভিস।
 আমরা প্রতিদিন সকাল ৮টা থেকে রাত ১০টা পর্যন্ত ডেলিভারি দিই।
@@ -43,24 +37,20 @@ export async function initializeRAG(): Promise<void> {
     console.log('✅ Sample knowledge.txt created');
   }
 
-  // ✅ FIX: Load knowledge and split into chunks
   const rawText = fs.readFileSync(knowledgeFile, 'utf-8');
   knowledgeChunks = rawText
     .split('\n')
     .map(line => line.trim())
-    .filter(line => line.length > 10); // filter empty/short lines
+    .filter(line => line.length > 10);
 
   if (knowledgeChunks.length === 0) {
-    throw new Error('Knowledge file is empty. Please add content to data/knowledge.txt');
+    throw new Error('Knowledge file is empty!');
   }
 
   isInitialized = true;
   console.log(`✅ Loaded ${knowledgeChunks.length} knowledge chunks`);
 }
 
-/**
- * Simple keyword-based retrieval (no vector DB needed for small knowledge bases)
- */
 function retrieveRelevantChunks(query: string, topK = 3): string[] {
   const queryWords = query.toLowerCase().split(/\s+/);
 
@@ -76,38 +66,40 @@ function retrieveRelevantChunks(query: string, topK = 3): string[] {
     .map(item => item.chunk);
 }
 
-/**
- * ✅ FIX: Answer questions using RAG with proper initialization check
- */
 export async function answerWithRAG(userMessage: string): Promise<string> {
-  // ✅ FIX: Check initialization before answering
   if (!isInitialized || knowledgeChunks.length === 0) {
-    console.error('RAG service not initialized or no knowledge chunks available.');
-    return 'দুঃখিত, এই মুহূর্তে আমাদের সিস্টেমে একটু সমস্যা হচ্ছে। অনুগ্রহ করে কিছুক্ষণ পরে আবার চেষ্টা করুন, অথবা সরাসরি আমাদের নম্বরে যোগাযোগ করুন।';
+    return 'দুঃখিত, সিস্টেমে সমস্যা হচ্ছে। একটু পরে আবার চেষ্টা করুন।';
   }
 
   try {
     const relevantChunks = retrieveRelevantChunks(userMessage);
     const context = relevantChunks.join('\n');
 
-    const prompt = `তুমি "ঘরের খাবার" ফুড ডেলিভারি সার্ভিসের একটি সহায়ক চ্যাটবট।
+    // ✅ Groq API call
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile', // ✅ সেরা ফ্রি model
+      messages: [
+        {
+          role: 'system',
+          content: `তুমি "ঘরের খাবার" ফুড ডেলিভারি সার্ভিসের একটি সহায়ক চ্যাটবট।
 নিচের তথ্যের উপর ভিত্তি করে প্রশ্নের উত্তর দাও। যদি তথ্য না থাকে, বিনয়ের সাথে জানাও।
 
 তথ্য:
-${context}
-
-গ্রাহকের প্রশ্ন: ${userMessage}
-
-উত্তর (বাংলায় এবং সংক্ষেপে):`;
-
-    const result = await ai.models.generateContent({
-      model:"gemini-2.0-flash",
-      contents: prompt,
+${context}`
+        },
+        {
+          role: 'user',
+          content: userMessage
+        }
+      ],
+      max_tokens: 500,
+      temperature: 0.7,
     });
 
-    return result.text || 'দুঃখিত, উত্তর তৈরি করতে পারিনি।';
+    return completion.choices[0]?.message?.content || 'দুঃখিত, উত্তর তৈরি করতে পারিনি।';
+
   } catch (error) {
-    console.error('Gemini API error:', error);
+    console.error('Groq API error:', error);
     return 'দুঃখিত, এই মুহূর্তে উত্তর দিতে পারছি না। অনুগ্রহ করে পরে আবার চেষ্টা করুন।';
   }
 }
