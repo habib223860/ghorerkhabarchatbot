@@ -104,7 +104,7 @@ export async function answerWithRAG(userMessage: string): Promise<string> {
 
     // ✅ Groq API call
     const completion = await groq.chat.completions.create({
-      model: 'llama3-70b-8192', // ✅ সেরা ফ্রি model
+      model: 'llama-3.3-70b-versatile', // ✅ সেরা ফ্রি model
       messages: [
         {
           role: 'system',
