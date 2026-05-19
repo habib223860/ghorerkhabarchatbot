@@ -78,7 +78,7 @@ export async function initializeRAG(): Promise<void> {
   console.log(`✅ Loaded ${knowledgeChunks.length} knowledge chunks`);
 }
 
-function retrieveRelevantChunks(query: string, topK = 3): string[] {
+function retrieveRelevantChunks(query: string, topK = 15): string[] {
   const queryWords = query.toLowerCase().split(/\s+/);
 
   const scored = knowledgeChunks.map(chunk => {
@@ -104,12 +104,14 @@ export async function answerWithRAG(userMessage: string): Promise<string> {
 
     // ✅ Groq API call
     const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile', // ✅ সেরা ফ্রি model
+      model: 'llama3-70b-8192', // ✅ সেরা ফ্রি model
       messages: [
         {
           role: 'system',
-          content: `তুমি "ঘরের খাবার" ফুড ডেলিভারি সার্ভিসের একটি সহায়ক চ্যাটবট।
-নিচের তথ্যের উপর ভিত্তি করে প্রশ্নের উত্তর দাও। যদি তথ্য না থাকে, বিনয়ের সাথে জানাও।
+          content: `তুমি "ঘরের খাবার" হোমমেড ফুড ডেলিভারি সার্ভিসের চ্যাটবট।
+সব প্রশ্নের উত্তর বাংলায় দাও।
+যদি কেউ মেনু বা সব আইটেম জানতে চায়, সব items এর নাম ও দাম বলো।
+যদি নির্দিষ্ট item জানতে চায়, শুধু সেটার তথ্য দাও।
 
 তথ্য:
 ${context}`
