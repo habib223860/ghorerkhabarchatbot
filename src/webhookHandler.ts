@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { answerWithRAG } from '../services/ragService.js';
 import { sendMessage, sendTypingOn } from '../services/messengerService.js';
 
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'my_verify_token';
+const FB_VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'my_verify_token';
 
 /**
  * ✅ Handle Facebook webhook verification (GET request)
